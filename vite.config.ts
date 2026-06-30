@@ -5,6 +5,7 @@ import svgLoader from 'vite-svg-loader'
 import { resolve } from 'path'
 
 export default defineConfig({
+  base: '/skilltree/', // Замените 'skilltree' на точное название вашего репозитория на GitHub
   plugins: [
     vue(),
     svgLoader(),
@@ -19,8 +20,8 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         icons: [
-          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
         ]
       }
     })

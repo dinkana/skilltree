@@ -245,7 +245,7 @@ onMounted(() => {
     </div>
 
     <footer class="w-full text-center text-xs text-gray-500 dark:text-gray-400 mt-10 pt-4 pb-6 border-t border-gray-300 dark:border-gray-700">
-      Инструмент создан Din Kana, PM/BA.<br>Для сотрудничества:
+      Инструмент создан Din Kana.<br>Для сотрудничества:
       <a href="https://t.me/din_kana" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">Telegram</a> ·
       <a href="https://www.linkedin.com/in/din-kana/" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn</a>
     </footer>
