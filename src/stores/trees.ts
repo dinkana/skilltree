@@ -7,22 +7,33 @@ export const useTreesStore = defineStore('trees', () => {
   const stored = localStorage.getItem('trees')
   const storedTrees: SkillTree[] = stored ? JSON.parse(stored) : []
   const storedIds = new Set(storedTrees.map(t => t.id))
+  
   const initialTrees = [
     ...presetTrees.filter(t => !storedIds.has(t.id)),
     ...storedTrees
   ]
-
+  
   const trees = ref<SkillTree[]>(initialTrees)
   const completedNodes = ref<Record<string, string[]>>(
     JSON.parse(localStorage.getItem('progress') || '{}')
   )
 
+  function safeSave(key: string, data: any) {
+    try {
+      localStorage.setItem(key, JSON.stringify(data))
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        alert('Хранилище браузера переполнено. Экспортируйте данные и удалите ненужные деревья.')
+      }
+    }
+  }
+
   function saveTrees() {
-    localStorage.setItem('trees', JSON.stringify(trees.value))
+    safeSave('trees', trees.value)
   }
 
   function saveProgress() {
-    localStorage.setItem('progress', JSON.stringify(completedNodes.value))
+    safeSave('progress', completedNodes.value)
   }
 
   function addTree(tree: SkillTree) {
@@ -54,8 +65,10 @@ export const useTreesStore = defineStore('trees', () => {
     if (!completedNodes.value[treeId]) {
       completedNodes.value[treeId] = []
     }
+    
     const nodes = completedNodes.value[treeId]
     const index = nodes.indexOf(nodeId)
+    
     if (index === -1) {
       nodes.push(nodeId)
     } else {
@@ -84,14 +97,17 @@ export const useTreesStore = defineStore('trees', () => {
     try {
       const data = JSON.parse(json)
       if (!data || typeof data !== 'object') return false
+      
       const progress = data.progress
       if (!progress || typeof progress !== 'object') return false
-
+      
       for (const treeId in progress) {
         if (!Array.isArray(progress[treeId])) continue
+        
         const validNodes = progress[treeId].filter(
           (id: unknown) => typeof id === 'string' && id.length > 0
         )
+        
         if (validNodes.length > 0) {
           completedNodes.value[treeId] = validNodes
         }

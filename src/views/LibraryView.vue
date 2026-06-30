@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { decodeTree, encodeTree } from '@/utils/encoding'
 import ImportModal from '@/components/ImportModal.vue'
 import { useI18n } from '@/composables/useI18n'
+import { presetTrees } from '@/data/presetTrees'
 import type { SkillTree } from '@/types'
 
 const treesStore = useTreesStore()
@@ -36,6 +37,14 @@ function getProgress(tree: SkillTree) {
 
 function createNew() {
   router.push({ name: 'editor' })
+}
+
+function quickStart() {
+  const preset = presetTrees[0]
+  const newTree: SkillTree = JSON.parse(JSON.stringify(preset))
+  newTree.id = crypto.randomUUID()
+  treesStore.addTree(newTree)
+  router.push({ name: 'tracker', params: { id: newTree.id } })
 }
 
 function shareTree(tree: SkillTree) {
@@ -86,6 +95,7 @@ function handleProgressFileSelect(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+  
   const reader = new FileReader()
   reader.onload = (e) => {
     const success = treesStore.importProgress(e.target?.result as string)
@@ -121,6 +131,7 @@ onMounted(() => {
     }
     router.replace({ query: {} })
   }
+  
   document.addEventListener('click', (e) => {
     const target = e.target as Element
     if (!target.closest('.more-menu-container')) {
@@ -156,6 +167,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
     <div class="mb-6">
       <input
         v-model="searchQuery"
@@ -163,14 +175,29 @@ onMounted(() => {
         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
       />
     </div>
+
     <input ref="progressFileInput" type="file" accept=".json" class="hidden" @change="handleProgressFileSelect" />
-    <div v-if="filteredTrees.length === 0" class="text-center text-gray-500 dark:text-gray-400 py-12">
-      {{ treesStore.trees.length === 0 ? t('noTrees') : 'Ничего не найдено' }}
+
+    <div v-if="filteredTrees.length === 0" class="text-center py-12">
+      <div v-if="treesStore.trees.length === 0" class="flex flex-col items-center gap-6">
+        <p class="text-gray-500 dark:text-gray-400 text-lg max-w-md">{{ t('noTrees') }}</p>
+        <div class="flex gap-3 flex-wrap justify-center">
+          <button @click="quickStart" class="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-sm font-medium shadow-sm">
+            {{ t('quickStart') }}
+          </button>
+          <button @click="showImportModal = true" class="px-5 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition text-sm font-medium">
+            {{ t('import') }}
+          </button>
+        </div>
+      </div>
+      <p v-else class="text-gray-500 dark:text-gray-400">Ничего не найдено</p>
     </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div v-for="tree in filteredTrees" :key="tree.id" class="p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-300 dark:border-gray-700 flex flex-col shadow-sm">
         <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{{ tree.title }}</h2>
         <p class="text-gray-600 dark:text-gray-400 mb-3 line-clamp-2 flex-1">{{ tree.description || t('noDescription') }}</p>
+        
         <div class="mb-3">
           <div v-if="getProgress(tree).done > 0" class="flex items-center gap-2">
             <div class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -182,6 +209,7 @@ onMounted(() => {
           </div>
           <span v-else class="text-xs text-gray-500 dark:text-gray-500">{{ t('notStarted') }}</span>
         </div>
+
         <div class="flex items-center gap-2 flex-wrap">
           <router-link :to="{ name: 'tracker', params: { id: tree.id } }" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-sm font-medium">
             {{ t('study') }}
@@ -189,6 +217,7 @@ onMounted(() => {
           <router-link :to="{ name: 'editor', params: { id: tree.id } }" class="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition text-sm font-medium">
             {{ t('edit') }}
           </router-link>
+          
           <div class="flex items-center gap-1 ml-auto">
             <button @click="copyTree(tree)" :title="t('copyTree')" class="p-2 text-gray-600 dark:text-gray-400 hover:text-cyan-700 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg transition border border-transparent hover:border-cyan-300 dark:hover:border-cyan-800">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -214,18 +243,23 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
     <footer class="w-full text-center text-xs text-gray-500 dark:text-gray-400 mt-10 pt-4 pb-6 border-t border-gray-300 dark:border-gray-700">
       Инструмент создан Din Kana, PM/BA.<br>Для сотрудничества:
       <a href="https://t.me/din_kana" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">Telegram</a> ·
       <a href="https://www.linkedin.com/in/din-kana/" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">LinkedIn</a>
     </footer>
+
     <ImportModal v-if="showImportModal" @close="showImportModal = false" />
+
     <div v-if="showShareToast" class="fixed bottom-6 right-6 bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-lg transition-opacity z-50">
       {{ t('copied') }}
     </div>
+
     <div v-if="statusToast" class="fixed bottom-6 right-6 px-4 py-2 rounded-lg shadow-lg transition-opacity z-50 text-white" :class="statusToast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'">
       {{ statusToast.message }}
     </div>
+
     <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6 border border-gray-300 dark:border-gray-700">
         <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">{{ t('deleteTitle') }}</h2>

@@ -7,20 +7,20 @@ export const useSettingsStore = defineStore('settings', () => {
   const locale = ref<Locale>((localStorage.getItem('locale') as Locale) || 'ru')
 
   function applyTheme() {
-    const isDark = theme.value === 'dark' ||
+    const isDark = theme.value === 'dark' || 
       (theme.value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
     document.documentElement.classList.toggle('dark', isDark)
   }
 
   function setTheme(newTheme: Theme) {
     theme.value = newTheme
-    localStorage.setItem('theme', newTheme)
+    try { localStorage.setItem('theme', newTheme) } catch {}
     applyTheme()
   }
 
   function setLocale(newLocale: Locale) {
     locale.value = newLocale
-    localStorage.setItem('locale', newLocale)
+    try { localStorage.setItem('locale', newLocale) } catch {}
   }
 
   watch(theme, applyTheme, { immediate: true })

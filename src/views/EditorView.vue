@@ -39,6 +39,7 @@ const hasDragged = ref(false)
 const viewBox = ref({ x: 0, y: 0, w: 1200, h: 800 })
 const isPanning = ref(false)
 const panStart = ref({ x: 0, y: 0 })
+
 const svgRef = ref<SVGSVGElement | null>(null)
 const isEditing = ref(false)
 const touchStartDist = ref(0)
@@ -48,12 +49,12 @@ const descDraft = ref('')
 const showColorPicker = ref(false)
 
 const NODE_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#6b7280'
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6b7280'
 ]
 
 onMounted(() => {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+  
   const id = route.params.id as string
   if (id) {
     const existing = treesStore.getTreeById(id)
@@ -74,6 +75,7 @@ onMounted(() => {
       return
     }
   }
+  
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -128,60 +130,75 @@ function getEdgePath(fromId: string, toId: string): string {
   const fromNode = tree.value.nodes.find(n => n.id === fromId)
   const toNode = tree.value.nodes.find(n => n.id === toId)
   if (!fromNode || !toNode) return ''
+  
   const x1 = fromNode.x
   const y1 = fromNode.y
   const x2 = toNode.x
   const y2 = toNode.y
   const midX = (x1 + x2) / 2
-  return `M${x1} ${y1} C${midX} ${y1},${midX} ${y2},${x2} ${y2}`
+  
+  return `M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
 }
 
 const ghostLinePath = computed(() => {
   if (!connectingFrom.value) return ''
   const fromNode = tree.value.nodes.find(n => n.id === connectingFrom.value)
   if (!fromNode) return ''
+  
   const x1 = fromNode.x
   const y1 = fromNode.y
   const x2 = ghostLine.value.x2
   const y2 = ghostLine.value.y2
   const midX = (x1 + x2) / 2
-  return `M${x1} ${y1} C${midX} ${y1},${midX} ${y2},${x2} ${y2}`
+  
+  return `M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
 })
 
 function autoLayout() {
   if (tree.value.nodes.length === 0) return
   pushHistory()
+  
   const nodes = tree.value.nodes
   const edges = tree.value.edges
+  
   const incomingMap = new Map<string, string[]>()
   nodes.forEach(n => incomingMap.set(n.id, []))
   edges.forEach(e => incomingMap.get(e.to)?.push(e.from))
+  
   const levelMap = new Map<string, number>()
   const visited = new Set<string>()
+  
   function computeLevel(nodeId: string): number {
     if (levelMap.has(nodeId)) return levelMap.get(nodeId)!
     if (visited.has(nodeId)) return 0
     visited.add(nodeId)
+    
     const parents = incomingMap.get(nodeId) || []
     if (parents.length === 0) { levelMap.set(nodeId, 0); return 0 }
+    
     let maxParentLevel = 0
     for (const parentId of parents) {
       maxParentLevel = Math.max(maxParentLevel, computeLevel(parentId))
     }
+    
     const level = maxParentLevel + 1
     levelMap.set(nodeId, level)
     return level
   }
+  
   nodes.forEach(n => computeLevel(n.id))
+  
   const layers = new Map<number, SkillNode[]>()
   nodes.forEach(n => {
     const level = levelMap.get(n.id) || 0
     if (!layers.has(level)) layers.set(level, [])
     layers.get(level)!.push(n)
   })
+  
   const horizontalSpacing = 220
   const verticalSpacing = 130
   const startY = 80
+  
   layers.forEach((layerNodes, level) => {
     const layerWidth = (layerNodes.length - 1) * horizontalSpacing
     const startX = 600 - layerWidth / 2
@@ -190,47 +207,71 @@ function autoLayout() {
       node.y = snap(startY + level * verticalSpacing)
     })
   })
+  
   const allYs = nodes.map(n => n.y)
   const minY = Math.min(...allYs)
   const offsetX = 600 - (Math.min(...nodes.map(n => n.x)) + Math.max(...nodes.map(n => n.x))) / 2
   const offsetY = 100 - minY
+  
   nodes.forEach(n => { n.x = snap(n.x + offsetX); n.y = snap(n.y + offsetY) })
+  
   const xs = nodes.map(n => n.x)
   const ys = nodes.map(n => n.y)
-  viewBox.value = { x: Math.min(...xs) - 200, y: Math.min(...ys) - 100, w: Math.max(...xs) - Math.min(...xs) + 400, h: Math.max(...ys) - Math.min(...ys) + 200 }
+  viewBox.value = { 
+    x: Math.min(...xs) - 200, 
+    y: Math.min(...ys) - 100, 
+    w: Math.max(...xs) - Math.min(...xs) + 400, 
+    h: Math.max(...ys) - Math.min(...ys) + 200 
+  }
 }
 
 function processMove(clientX: number, clientY: number) {
   if (isPanning.value) {
     const dx = (clientX - panStart.value.x) * (viewBox.value.w / window.innerWidth)
     const dy = (clientY - panStart.value.y) * (viewBox.value.h / window.innerHeight)
-    viewBox.value.x -= dx; viewBox.value.y -= dy
-    panStart.value = { x: clientX, y: clientY }; return
-  }
-  if (draggingNode.value) {
-    const { x, y } = getSVGPointFromClient(clientX, clientY)
-    const dx = x - dragStart.value.x; const dy = y - dragStart.value.y
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasDragged.value = true
-    const node = tree.value.nodes.find(n => n.id === draggingNode.value)
-    if (node) { node.x = snap(nodeStartPos.value.x + dx); node.y = snap(nodeStartPos.value.y + dy) }
+    viewBox.value.x -= dx
+    viewBox.value.y -= dy
+    panStart.value = { x: clientX, y: clientY }
     return
   }
+  
+  if (draggingNode.value) {
+    const { x, y } = getSVGPointFromClient(clientX, clientY)
+    const dx = x - dragStart.value.x
+    const dy = y - dragStart.value.y
+    
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasDragged.value = true
+    
+    const node = tree.value.nodes.find(n => n.id === draggingNode.value)
+    if (node) {
+      node.x = snap(nodeStartPos.value.x + dx)
+      node.y = snap(nodeStartPos.value.y + dy)
+    }
+    return
+  }
+  
   if (connectingFrom.value) {
     const { x, y } = getSVGPointFromClient(clientX, clientY)
-    ghostLine.value.x2 = x; ghostLine.value.y2 = y
+    ghostLine.value.x2 = x
+    ghostLine.value.y2 = y
   }
 }
 
 function processEnd(clientX: number, clientY: number) {
   if (isPanning.value) { isPanning.value = false; return }
+  
   if (draggingNode.value) {
     if (hasDragged.value) pushHistory()
-    draggingNode.value = null; hasDragged.value = false; return
+    draggingNode.value = null
+    hasDragged.value = false
+    return
   }
+  
   if (connectingFrom.value) {
     const target = document.elementFromPoint(clientX, clientY) as Element
     const nodeGroup = target?.closest('.node-group')
     const targetNodeId = nodeGroup?.getAttribute('data-node-id')
+    
     if (targetNodeId && targetNodeId !== connectingFrom.value) {
       const exists = tree.value.edges.some(e => e.from === connectingFrom.value && e.to === targetNodeId)
       if (!exists) {
@@ -245,6 +286,7 @@ function processEnd(clientX: number, clientY: number) {
 function handleCanvasMouseDown(e: MouseEvent) {
   const target = e.target as Element
   const isBg = target.tagName === 'svg' || (target.tagName === 'rect' && target.id === 'bg-editor')
+  
   if (isBg) {
     if (isCreating.value) {
       const { x, y } = getSVGPoint(e)
@@ -252,23 +294,33 @@ function handleCanvasMouseDown(e: MouseEvent) {
       tree.value.nodes.push({ id: crypto.randomUUID(), title: 'New Topic', x: snap(x), y: snap(y) })
       isCreating.value = false
     } else {
-      isPanning.value = true; panStart.value = { x: e.clientX, y: e.clientY }
-      selectedNodeId.value = null; showColorPicker.value = false
+      isPanning.value = true
+      panStart.value = { x: e.clientX, y: e.clientY }
+      selectedNodeId.value = null
+      showColorPicker.value = false
     }
   }
 }
 
 function handleNodeMouseDown(e: MouseEvent, node: SkillNode) {
-  e.stopPropagation(); e.preventDefault()
-  draggingNode.value = node.id; hasDragged.value = false
+  e.stopPropagation()
+  e.preventDefault()
+  draggingNode.value = node.id
+  hasDragged.value = false
+  
   const { x, y } = getSVGPoint(e)
-  dragStart.value = { x, y }; nodeStartPos.value = { x: node.x, y: node.y }
-  selectedNodeId.value = node.id; showColorPicker.value = false
+  dragStart.value = { x, y }
+  nodeStartPos.value = { x: node.x, y: node.y }
+  
+  selectedNodeId.value = node.id
+  showColorPicker.value = false
 }
 
 function handleHandleMouseDown(e: MouseEvent, node: SkillNode) {
-  e.stopPropagation(); e.preventDefault()
+  e.stopPropagation()
+  e.preventDefault()
   connectingFrom.value = node.id
+  
   const { x, y } = getSVGPoint(e)
   ghostLine.value = { x1: node.x, y1: node.y, x2: x, y2: y }
 }
@@ -277,14 +329,20 @@ function handleMouseMove(e: MouseEvent) { processMove(e.clientX, e.clientY) }
 function handleMouseUp(e: MouseEvent) { processEnd(e.clientX, e.clientY) }
 
 function handleWheel(e: WheelEvent) {
-  e.preventDefault()
   const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
-  const newW = viewBox.value.w * zoomFactor; const newH = viewBox.value.h * zoomFactor
+  const newW = viewBox.value.w * zoomFactor
+  const newH = viewBox.value.h * zoomFactor
+  
   const rect = svgRef.value?.getBoundingClientRect()
   if (!rect) return
-  const mx = (e.clientX - rect.left) / rect.width; const my = (e.clientY - rect.top) / rect.height
-  viewBox.value.x += (viewBox.value.w - newW) * mx; viewBox.value.y += (viewBox.value.h - newH) * my
-  viewBox.value.w = newW; viewBox.value.h = newH
+  
+  const mx = (e.clientX - rect.left) / rect.width
+  const my = (e.clientY - rect.top) / rect.height
+  
+  viewBox.value.x += (viewBox.value.w - newW) * mx
+  viewBox.value.y += (viewBox.value.h - newH) * my
+  viewBox.value.w = newW
+  viewBox.value.h = newH
 }
 
 function getTouchDistance(touches: TouchList) {
@@ -295,6 +353,7 @@ function handleCanvasTouchStart(e: TouchEvent) {
   if (e.touches.length === 1) {
     const target = e.target as Element
     const isBg = target.tagName === 'svg' || (target.tagName === 'rect' && target.id === 'bg-editor')
+    
     if (isBg) {
       if (isCreating.value) {
         const { x, y } = getSVGPointFromClient(e.touches[0].clientX, e.touches[0].clientY)
@@ -302,38 +361,56 @@ function handleCanvasTouchStart(e: TouchEvent) {
         tree.value.nodes.push({ id: crypto.randomUUID(), title: 'New Topic', x: snap(x), y: snap(y) })
         isCreating.value = false
       } else {
-        isPanning.value = true; panStart.value = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-        selectedNodeId.value = null; showColorPicker.value = false
+        isPanning.value = true
+        panStart.value = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+        selectedNodeId.value = null
+        showColorPicker.value = false
       }
     }
   } else if (e.touches.length === 2) {
-    isPanning.value = false; touchStartDist.value = getTouchDistance(e.touches)
+    isPanning.value = false
+    touchStartDist.value = getTouchDistance(e.touches)
     touchStartViewBox.value = { ...viewBox.value }
   }
 }
 
 function handleNodeTouchStart(e: TouchEvent, node: SkillNode) {
-  e.stopPropagation(); e.preventDefault()
-  draggingNode.value = node.id; hasDragged.value = false
+  e.stopPropagation()
+  draggingNode.value = node.id
+  hasDragged.value = false
+  
   const touch = e.touches[0]
   const { x, y } = getSVGPointFromClient(touch.clientX, touch.clientY)
-  dragStart.value = { x, y }; nodeStartPos.value = { x: node.x, y: node.y }
-  selectedNodeId.value = node.id; showColorPicker.value = false
+  dragStart.value = { x, y }
+  nodeStartPos.value = { x: node.x, y: node.y }
+  
+  selectedNodeId.value = node.id
+  showColorPicker.value = false
 }
 
 function handleCanvasTouchMove(e: TouchEvent) {
-  if (e.touches.length === 1) processMove(e.touches[0].clientX, e.touches[0].clientY)
-  else if (e.touches.length === 2) {
-    const dist = getTouchDistance(e.touches); const scale = touchStartDist.value / dist
-    const newW = touchStartViewBox.value.w * scale; const newH = touchStartViewBox.value.h * scale
+  if (e.touches.length === 1) {
+    processMove(e.touches[0].clientX, e.touches[0].clientY)
+  } else if (e.touches.length === 2) {
+    const dist = getTouchDistance(e.touches)
+    const scale = touchStartDist.value / dist
+    
+    const newW = touchStartViewBox.value.w * scale
+    const newH = touchStartViewBox.value.h * scale
+    
     const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
     const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
+    
     const rect = svgRef.value?.getBoundingClientRect()
     if (!rect) return
-    const mx = (cx - rect.left) / rect.width; const my = (cy - rect.top) / rect.height
+    
+    const mx = (cx - rect.left) / rect.width
+    const my = (cy - rect.top) / rect.height
+    
     viewBox.value.x = touchStartViewBox.value.x + (touchStartViewBox.value.w - newW) * mx
     viewBox.value.y = touchStartViewBox.value.y + (touchStartViewBox.value.h - newH) * my
-    viewBox.value.w = newW; viewBox.value.h = newH
+    viewBox.value.w = newW
+    viewBox.value.h = newH
   }
 }
 
@@ -345,24 +422,35 @@ function handleCanvasTouchEnd(e: TouchEvent) {
 }
 
 function handleNodeDblClick(e: MouseEvent, node: SkillNode) {
-  e.stopPropagation(); e.preventDefault(); renameNode(node)
+  e.stopPropagation()
+  e.preventDefault()
+  renameNode(node)
 }
 
 function renameNode(node: SkillNode) {
   const newTitle = prompt(t('editorPromptRename'), node.title)
-  if (newTitle && newTitle.trim()) { pushHistory(); node.title = newTitle.trim() }
+  if (newTitle && newTitle.trim()) {
+    pushHistory()
+    node.title = newTitle.trim()
+  }
 }
 
 function openDescModal() {
   if (!selectedNodeId.value) return
   const node = tree.value.nodes.find(n => n.id === selectedNodeId.value)
-  if (node) { descDraft.value = node.description || ''; showDescModal.value = true }
+  if (node) {
+    descDraft.value = node.description || ''
+    showDescModal.value = true
+  }
 }
 
 function saveDesc() {
   if (!selectedNodeId.value) return
   const node = tree.value.nodes.find(n => n.id === selectedNodeId.value)
-  if (node) { pushHistory(); node.description = descDraft.value.trim() || undefined }
+  if (node) {
+    pushHistory()
+    node.description = descDraft.value.trim() || undefined
+  }
   showDescModal.value = false
 }
 
@@ -371,36 +459,56 @@ function deleteSelected() {
   pushHistory()
   tree.value.nodes = tree.value.nodes.filter(n => n.id !== selectedNodeId.value)
   tree.value.edges = tree.value.edges.filter(e => e.from !== selectedNodeId.value && e.to !== selectedNodeId.value)
-  selectedNodeId.value = null; showColorPicker.value = false
+  selectedNodeId.value = null
+  showColorPicker.value = false
 }
 
 function setNodeColor(color: string) {
   if (!selectedNodeId.value) return
   const node = tree.value.nodes.find(n => n.id === selectedNodeId.value)
-  if (node) { pushHistory(); node.color = node.color === color ? undefined : color }
+  if (node) {
+    pushHistory()
+    node.color = node.color === color ? undefined : color
+  }
 }
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo() }
-  else if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedNodeId.value) { e.preventDefault(); deleteSelected() } }
-  else if (e.key === 'F2') {
+  
+  if (e.ctrlKey && e.key === 'z') {
+    e.preventDefault()
+    undo()
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedNodeId.value) {
+      e.preventDefault()
+      deleteSelected()
+    }
+  } else if (e.key === 'F2') {
     if (selectedNodeId.value) {
       e.preventDefault()
       const node = tree.value.nodes.find(n => n.id === selectedNodeId.value)
       if (node) renameNode(node)
     }
   } else if (e.key === 'Escape') {
-    isCreating.value = false; selectedNodeId.value = null; connectingFrom.value = null
-    showDescModal.value = false; showColorPicker.value = false
+    isCreating.value = false
+    selectedNodeId.value = null
+    connectingFrom.value = null
+    showDescModal.value = false
+    showColorPicker.value = false
   }
 }
 
 function saveTree() {
-  if (!tree.value.title.trim()) { alert(t('editorErrorNoTitle')); return }
+  if (!tree.value.title.trim()) {
+    alert(t('editorErrorNoTitle'))
+    return
+  }
+  
   if (isEditing.value) treesStore.updateTree(tree.value)
   else treesStore.addTree(tree.value)
-  isDirty.value = false; router.push({ name: 'library' })
+  
+  isDirty.value = false
+  router.push({ name: 'library' })
 }
 
 const isRenameActive = computed(() => !!selectedNodeId.value)
@@ -411,39 +519,43 @@ const isColorActive = computed(() => !!selectedNodeId.value)
 
 <template>
   <div class="flex flex-col h-[calc(100vh-65px)] bg-gray-100 dark:bg-gray-900">
-    <div class="p-4 bg-white dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 flex flex-wrap gap-4 items-center z-10">
-      <button @click="router.push({ name: 'library' })" class="px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">
-        {{ t('editorBack') }}
-      </button>
-      <input
-        v-model="tree.title"
-        @input="isDirty = true"
-        :placeholder="t('editorTitlePlaceholder')"
-        class="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
-      />
-      <input
-        v-model="tree.description"
-        @input="isDirty = true"
-        :placeholder="t('editorDescPlaceholder')"
-        class="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
-      />
-      <button @click="saveTree" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium">
-        {{ t('editorSave') }}
-      </button>
+    <div class="p-3 bg-white dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 z-10">
+      <div class="max-w-7xl mx-auto flex flex-wrap gap-3 items-center justify-center">
+        <button @click="router.push({ name: 'library' })" class="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">
+          {{ t('editorBack') }}
+        </button>
+        <input
+          v-model="tree.title"
+          @input="isDirty = true"
+          :placeholder="t('editorTitlePlaceholder')"
+          class="w-full sm:w-96 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
+        />
+        <input
+          v-model="tree.description"
+          @input="isDirty = true"
+          :placeholder="t('editorDescPlaceholder')"
+          class="w-full sm:w-96 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
+        />
+        <button @click="saveTree" class="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium">
+          {{ t('editorSave') }}
+        </button>
+      </div>
     </div>
+
     <div class="flex-1 overflow-hidden relative touch-none" :class="{ 'cursor-crosshair': isCreating, 'cursor-grab': !isCreating && !draggingNode }">
       <svg
         ref="svgRef"
-        class="w-full h-full"
+        class="w-full h-full touch-none"
         :viewBox="`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`"
         @mousedown="handleCanvasMouseDown"
         @mousemove="handleMouseMove"
         @mouseup="handleMouseUp"
         @mouseleave="handleMouseUp"
-        @wheel="handleWheel"
-        @touchstart="handleCanvasTouchStart"
+        @wheel.prevent="handleWheel"
+        @touchstart.prevent="handleCanvasTouchStart"
         @touchmove.prevent="handleCanvasTouchMove"
-        @touchend="handleCanvasTouchEnd"
+        @touchend.prevent="handleCanvasTouchEnd"
+        @contextmenu.prevent
       >
         <defs>
           <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -451,13 +563,37 @@ const isColorActive = computed(() => !!selectedNodeId.value)
           </pattern>
         </defs>
         <rect id="bg-editor" x="-10000" y="-10000" width="20000" height="20000" fill="url(#grid)" />
+        
         <g>
-          <path v-for="edge in tree.edges" :key="edge.id" :d="getEdgePath(edge.from, edge.to)" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-gray-500 dark:text-gray-500" />
+          <path
+            v-for="edge in tree.edges"
+            :key="edge.id"
+            :d="getEdgePath(edge.from, edge.to)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            class="text-gray-500 dark:text-gray-500"
+          />
         </g>
-        <path v-if="connectingFrom" :d="ghostLinePath" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,6" stroke-linecap="round" class="pointer-events-none" />
+        
+        <path
+          v-if="connectingFrom"
+          :d="ghostLinePath"
+          fill="none"
+          stroke="#3b82f6"
+          stroke-width="2"
+          stroke-dasharray="6,6"
+          stroke-linecap="round"
+          class="pointer-events-none"
+        />
+
         <g
-          v-for="node in tree.nodes" :key="node.id" :data-node-id="node.id"
-          :transform="`translate(${node.x},${node.y})`" class="node-group"
+          v-for="node in tree.nodes"
+          :key="node.id"
+          :data-node-id="node.id"
+          :transform="`translate(${node.x},${node.y})`"
+          class="node-group"
           :class="draggingNode === node.id ? 'cursor-grabbing' : 'cursor-grab'"
           @mousedown="handleNodeMouseDown($event, node)"
           @dblclick="handleNodeDblClick($event, node)"
@@ -473,7 +609,8 @@ const isColorActive = computed(() => !!selectedNodeId.value)
             :fill="node.color || (isDark ? '#1f2937' : '#ffffff')"
           />
           <text
-            x="0" y="5" text-anchor="middle"
+            x="0" y="5"
+            text-anchor="middle"
             class="text-sm font-semibold pointer-events-none select-none"
             :fill="node.color ? '#ffffff' : (isDark ? '#f3f4f6' : '#111827')"
           >
@@ -487,7 +624,8 @@ const isColorActive = computed(() => !!selectedNodeId.value)
           />
         </g>
       </svg>
-      <div class="absolute top-6 left-6 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex gap-2 border border-gray-300 dark:border-gray-700 z-20 flex-wrap">
+
+      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex gap-2 border border-gray-300 dark:border-gray-700 z-20 flex-wrap justify-center max-w-[calc(100vw-2rem)]">
         <button @click="undo" :disabled="history.length === 0" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorUndo') }}
         </button>
@@ -503,24 +641,39 @@ const isColorActive = computed(() => !!selectedNodeId.value)
         <button @click="openDescModal" :disabled="!isDescActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorDescription') }}
         </button>
+        
         <div class="relative">
           <button @click="showColorPicker = !showColorPicker" :disabled="!isColorActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
             {{ t('nodeColor') }}
           </button>
           <div v-if="showColorPicker" class="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-xl p-2 flex gap-1.5 z-30">
-            <button v-for="color in NODE_COLORS" :key="color" @click="setNodeColor(color)" class="w-7 h-7 rounded-full border-2 transition-transform hover:scale-110" :class="selectedNodeId && tree.nodes.find(n => n.id === selectedNodeId)?.color === color ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'" :style="{ backgroundColor: color }" />
+            <button
+              v-for="color in NODE_COLORS"
+              :key="color"
+              @click="setNodeColor(color)"
+              class="w-7 h-7 rounded-full border-2 transition-transform hover:scale-110"
+              :class="selectedNodeId && tree.nodes.find(n => n.id === selectedNodeId)?.color === color ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'"
+              :style="{ backgroundColor: color }"
+            />
             <button @click="setNodeColor('')" class="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 transition-transform hover:scale-110 flex items-center justify-center text-xs text-gray-500" title="Сбросить цвет">✕</button>
           </div>
         </div>
+
         <button @click="deleteSelected" :disabled="!isDeleteActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-800 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorDelete') }}
         </button>
       </div>
     </div>
+
     <div v-if="showDescModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6 border border-gray-300 dark:border-gray-700">
         <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">{{ t('editorDescModalTitle') }}</h2>
-        <textarea v-model="descDraft" rows="5" :placeholder="t('editorDescPlaceholderModal')" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
+        <textarea
+          v-model="descDraft"
+          rows="5"
+          :placeholder="t('editorDescPlaceholderModal')"
+          class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+        ></textarea>
         <div class="flex justify-end gap-3 mt-6">
           <button @click="showDescModal = false" class="px-4 py-2 text-gray-800 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">{{ t('cancel') }}</button>
           <button @click="saveDesc" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">{{ t('save') }}</button>

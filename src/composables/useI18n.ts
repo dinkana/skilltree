@@ -11,6 +11,7 @@ const dictionaries = {
     copyTree: 'Копировать',
     copySuffix: ' (Копия)',
     noTrees: 'У вас пока нет деревьев навыков. Создайте первое или импортируйте по ссылке.',
+    quickStart: 'Быстрый старт (Демо)',
     study: 'Изучать',
     edit: 'Редактировать',
     share: 'Поделиться',
@@ -65,7 +66,8 @@ const dictionaries = {
     progressImported: 'Прогресс импортирован',
     progressImportError: 'Не удалось импортировать прогресс',
     nodeColor: 'Цвет узла',
-    more: 'Ещё'
+    more: 'Ещё',
+    focusAvailable: 'Фокус на доступных'
   },
   en: {
     appTitle: 'SkillTree',
@@ -77,6 +79,7 @@ const dictionaries = {
     copyTree: 'Duplicate',
     copySuffix: ' (Copy)',
     noTrees: 'You have no skill trees yet. Create your first one or import from a link.',
+    quickStart: 'Quick Start (Demo)',
     study: 'Study',
     edit: 'Edit',
     share: 'Share',
@@ -131,7 +134,8 @@ const dictionaries = {
     progressImported: 'Progress imported',
     progressImportError: 'Failed to import progress',
     nodeColor: 'Node color',
-    more: 'More'
+    more: 'More',
+    focusAvailable: 'Focus on available'
   }
 }
 

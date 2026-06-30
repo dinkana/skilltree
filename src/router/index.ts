@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import LibraryView from '@/views/LibraryView.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
       name: 'library',
-      component: () => import('@/views/LibraryView.vue')
+      component: LibraryView
     },
     {
       path: '/editor/:id?',
@@ -14,7 +15,7 @@ const router = createRouter({
       component: () => import('@/views/EditorView.vue')
     },
     {
-      path: '/tree/:id',
+      path: '/tracker/:id',
       name: 'tracker',
       component: () => import('@/views/TrackerView.vue')
     }
