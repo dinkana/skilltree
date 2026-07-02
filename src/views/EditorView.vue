@@ -39,7 +39,6 @@ const hasDragged = ref(false)
 const viewBox = ref({ x: 0, y: 0, w: 1200, h: 800 })
 const isPanning = ref(false)
 const panStart = ref({ x: 0, y: 0 })
-
 const svgRef = ref<SVGSVGElement | null>(null)
 const isEditing = ref(false)
 const touchStartDist = ref(0)
@@ -47,14 +46,18 @@ const touchStartViewBox = ref({ x: 0, y: 0, w: 0, h: 0 })
 const showDescModal = ref(false)
 const descDraft = ref('')
 const showColorPicker = ref(false)
+const showMetaModal = ref(false)
+const showToolsSheet = ref(false)
+const showColorPickerSheet = ref(false)
 
 const NODE_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6b7280'
 ]
 
+const selectedNode = computed(() => tree.value.nodes.find(n => n.id === selectedNodeId.value))
+
 onMounted(() => {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-  
   const id = route.params.id as string
   if (id) {
     const existing = treesStore.getTreeById(id)
@@ -75,7 +78,6 @@ onMounted(() => {
       return
     }
   }
-  
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -130,13 +132,11 @@ function getEdgePath(fromId: string, toId: string): string {
   const fromNode = tree.value.nodes.find(n => n.id === fromId)
   const toNode = tree.value.nodes.find(n => n.id === toId)
   if (!fromNode || !toNode) return ''
-  
   const x1 = fromNode.x
   const y1 = fromNode.y
   const x2 = toNode.x
   const y2 = toNode.y
   const midX = (x1 + x2) / 2
-  
   return `M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
 }
 
@@ -144,61 +144,48 @@ const ghostLinePath = computed(() => {
   if (!connectingFrom.value) return ''
   const fromNode = tree.value.nodes.find(n => n.id === connectingFrom.value)
   if (!fromNode) return ''
-  
   const x1 = fromNode.x
   const y1 = fromNode.y
   const x2 = ghostLine.value.x2
   const y2 = ghostLine.value.y2
   const midX = (x1 + x2) / 2
-  
   return `M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
 })
 
 function autoLayout() {
   if (tree.value.nodes.length === 0) return
   pushHistory()
-  
   const nodes = tree.value.nodes
   const edges = tree.value.edges
-  
   const incomingMap = new Map<string, string[]>()
   nodes.forEach(n => incomingMap.set(n.id, []))
   edges.forEach(e => incomingMap.get(e.to)?.push(e.from))
-  
   const levelMap = new Map<string, number>()
   const visited = new Set<string>()
-  
   function computeLevel(nodeId: string): number {
     if (levelMap.has(nodeId)) return levelMap.get(nodeId)!
     if (visited.has(nodeId)) return 0
     visited.add(nodeId)
-    
     const parents = incomingMap.get(nodeId) || []
     if (parents.length === 0) { levelMap.set(nodeId, 0); return 0 }
-    
     let maxParentLevel = 0
     for (const parentId of parents) {
       maxParentLevel = Math.max(maxParentLevel, computeLevel(parentId))
     }
-    
     const level = maxParentLevel + 1
     levelMap.set(nodeId, level)
     return level
   }
-  
   nodes.forEach(n => computeLevel(n.id))
-  
   const layers = new Map<number, SkillNode[]>()
   nodes.forEach(n => {
     const level = levelMap.get(n.id) || 0
     if (!layers.has(level)) layers.set(level, [])
     layers.get(level)!.push(n)
   })
-  
   const horizontalSpacing = 220
   const verticalSpacing = 130
   const startY = 80
-  
   layers.forEach((layerNodes, level) => {
     const layerWidth = (layerNodes.length - 1) * horizontalSpacing
     const startX = 600 - layerWidth / 2
@@ -207,21 +194,18 @@ function autoLayout() {
       node.y = snap(startY + level * verticalSpacing)
     })
   })
-  
   const allYs = nodes.map(n => n.y)
   const minY = Math.min(...allYs)
   const offsetX = 600 - (Math.min(...nodes.map(n => n.x)) + Math.max(...nodes.map(n => n.x))) / 2
   const offsetY = 100 - minY
-  
   nodes.forEach(n => { n.x = snap(n.x + offsetX); n.y = snap(n.y + offsetY) })
-  
   const xs = nodes.map(n => n.x)
   const ys = nodes.map(n => n.y)
-  viewBox.value = { 
-    x: Math.min(...xs) - 200, 
-    y: Math.min(...ys) - 100, 
-    w: Math.max(...xs) - Math.min(...xs) + 400, 
-    h: Math.max(...ys) - Math.min(...ys) + 200 
+  viewBox.value = {
+    x: Math.min(...xs) - 200,
+    y: Math.min(...ys) - 100,
+    w: Math.max(...xs) - Math.min(...xs) + 400,
+    h: Math.max(...ys) - Math.min(...ys) + 200
   }
 }
 
@@ -234,14 +218,11 @@ function processMove(clientX: number, clientY: number) {
     panStart.value = { x: clientX, y: clientY }
     return
   }
-  
   if (draggingNode.value) {
     const { x, y } = getSVGPointFromClient(clientX, clientY)
     const dx = x - dragStart.value.x
     const dy = y - dragStart.value.y
-    
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasDragged.value = true
-    
     const node = tree.value.nodes.find(n => n.id === draggingNode.value)
     if (node) {
       node.x = snap(nodeStartPos.value.x + dx)
@@ -249,7 +230,6 @@ function processMove(clientX: number, clientY: number) {
     }
     return
   }
-  
   if (connectingFrom.value) {
     const { x, y } = getSVGPointFromClient(clientX, clientY)
     ghostLine.value.x2 = x
@@ -259,19 +239,16 @@ function processMove(clientX: number, clientY: number) {
 
 function processEnd(clientX: number, clientY: number) {
   if (isPanning.value) { isPanning.value = false; return }
-  
   if (draggingNode.value) {
     if (hasDragged.value) pushHistory()
     draggingNode.value = null
     hasDragged.value = false
     return
   }
-  
   if (connectingFrom.value) {
     const target = document.elementFromPoint(clientX, clientY) as Element
     const nodeGroup = target?.closest('.node-group')
     const targetNodeId = nodeGroup?.getAttribute('data-node-id')
-    
     if (targetNodeId && targetNodeId !== connectingFrom.value) {
       const exists = tree.value.edges.some(e => e.from === connectingFrom.value && e.to === targetNodeId)
       if (!exists) {
@@ -286,7 +263,6 @@ function processEnd(clientX: number, clientY: number) {
 function handleCanvasMouseDown(e: MouseEvent) {
   const target = e.target as Element
   const isBg = target.tagName === 'svg' || (target.tagName === 'rect' && target.id === 'bg-editor')
-  
   if (isBg) {
     if (isCreating.value) {
       const { x, y } = getSVGPoint(e)
@@ -307,11 +283,9 @@ function handleNodeMouseDown(e: MouseEvent, node: SkillNode) {
   e.preventDefault()
   draggingNode.value = node.id
   hasDragged.value = false
-  
   const { x, y } = getSVGPoint(e)
   dragStart.value = { x, y }
   nodeStartPos.value = { x: node.x, y: node.y }
-  
   selectedNodeId.value = node.id
   showColorPicker.value = false
 }
@@ -320,7 +294,6 @@ function handleHandleMouseDown(e: MouseEvent, node: SkillNode) {
   e.stopPropagation()
   e.preventDefault()
   connectingFrom.value = node.id
-  
   const { x, y } = getSVGPoint(e)
   ghostLine.value = { x1: node.x, y1: node.y, x2: x, y2: y }
 }
@@ -332,13 +305,10 @@ function handleWheel(e: WheelEvent) {
   const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
   const newW = viewBox.value.w * zoomFactor
   const newH = viewBox.value.h * zoomFactor
-  
   const rect = svgRef.value?.getBoundingClientRect()
   if (!rect) return
-  
   const mx = (e.clientX - rect.left) / rect.width
   const my = (e.clientY - rect.top) / rect.height
-  
   viewBox.value.x += (viewBox.value.w - newW) * mx
   viewBox.value.y += (viewBox.value.h - newH) * my
   viewBox.value.w = newW
@@ -353,7 +323,6 @@ function handleCanvasTouchStart(e: TouchEvent) {
   if (e.touches.length === 1) {
     const target = e.target as Element
     const isBg = target.tagName === 'svg' || (target.tagName === 'rect' && target.id === 'bg-editor')
-    
     if (isBg) {
       if (isCreating.value) {
         const { x, y } = getSVGPointFromClient(e.touches[0].clientX, e.touches[0].clientY)
@@ -378,12 +347,10 @@ function handleNodeTouchStart(e: TouchEvent, node: SkillNode) {
   e.stopPropagation()
   draggingNode.value = node.id
   hasDragged.value = false
-  
   const touch = e.touches[0]
   const { x, y } = getSVGPointFromClient(touch.clientX, touch.clientY)
   dragStart.value = { x, y }
   nodeStartPos.value = { x: node.x, y: node.y }
-  
   selectedNodeId.value = node.id
   showColorPicker.value = false
 }
@@ -394,19 +361,14 @@ function handleCanvasTouchMove(e: TouchEvent) {
   } else if (e.touches.length === 2) {
     const dist = getTouchDistance(e.touches)
     const scale = touchStartDist.value / dist
-    
     const newW = touchStartViewBox.value.w * scale
     const newH = touchStartViewBox.value.h * scale
-    
     const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
     const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
-    
     const rect = svgRef.value?.getBoundingClientRect()
     if (!rect) return
-    
     const mx = (cx - rect.left) / rect.width
     const my = (cy - rect.top) / rect.height
-    
     viewBox.value.x = touchStartViewBox.value.x + (touchStartViewBox.value.w - newW) * mx
     viewBox.value.y = touchStartViewBox.value.y + (touchStartViewBox.value.h - newH) * my
     viewBox.value.w = newW
@@ -474,7 +436,6 @@ function setNodeColor(color: string) {
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-  
   if (e.ctrlKey && e.key === 'z') {
     e.preventDefault()
     undo()
@@ -495,6 +456,9 @@ function handleKeydown(e: KeyboardEvent) {
     connectingFrom.value = null
     showDescModal.value = false
     showColorPicker.value = false
+    showMetaModal.value = false
+    showToolsSheet.value = false
+    showColorPickerSheet.value = false
   }
 }
 
@@ -503,10 +467,8 @@ function saveTree() {
     alert(t('editorErrorNoTitle'))
     return
   }
-  
   if (isEditing.value) treesStore.updateTree(tree.value)
   else treesStore.addTree(tree.value)
-  
   isDirty.value = false
   router.push({ name: 'library' })
 }
@@ -519,27 +481,23 @@ const isColorActive = computed(() => !!selectedNodeId.value)
 
 <template>
   <div class="flex flex-col h-[calc(100vh-65px)] bg-gray-100 dark:bg-gray-900">
-    <div class="p-3 bg-white dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 z-10">
-      <div class="max-w-7xl mx-auto flex flex-wrap gap-3 items-center justify-center">
-        <button @click="router.push({ name: 'library' })" class="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">
-          {{ t('editorBack') }}
-        </button>
-        <input
-          v-model="tree.title"
-          @input="isDirty = true"
-          :placeholder="t('editorTitlePlaceholder')"
-          class="w-full sm:w-96 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
-        />
-        <input
-          v-model="tree.description"
-          @input="isDirty = true"
-          :placeholder="t('editorDescPlaceholder')"
-          class="w-full sm:w-96 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none"
-        />
-        <button @click="saveTree" class="px-4 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium">
-          {{ t('editorSave') }}
-        </button>
+    <div class="h-12 sm:h-16 px-2 sm:px-4 bg-white dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 z-10 flex items-center justify-between">
+      <button @click="router.push({ name: 'library' })" class="p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <button @click="showMetaModal = true" class="flex-1 mx-2 text-center truncate text-sm font-semibold text-gray-900 dark:text-gray-100 sm:hidden">
+        {{ tree.title || t('editorTitlePlaceholder') }}
+      </button>
+
+      <div class="hidden sm:flex flex-1 gap-3 items-center justify-center">
+        <input v-model="tree.title" @input="isDirty = true" :placeholder="t('editorTitlePlaceholder')" class="w-64 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+        <input v-model="tree.description" @input="isDirty = true" :placeholder="t('editorDescPlaceholder')" class="w-64 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none" />
       </div>
+
+      <button @click="saveTree" class="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium whitespace-nowrap">
+        {{ t('editorSave') }}
+      </button>
     </div>
 
     <div class="flex-1 overflow-hidden relative touch-none" :class="{ 'cursor-crosshair': isCreating, 'cursor-grab': !isCreating && !draggingNode }">
@@ -563,7 +521,6 @@ const isColorActive = computed(() => !!selectedNodeId.value)
           </pattern>
         </defs>
         <rect id="bg-editor" x="-10000" y="-10000" width="20000" height="20000" fill="url(#grid)" />
-        
         <g>
           <path
             v-for="edge in tree.edges"
@@ -576,7 +533,6 @@ const isColorActive = computed(() => !!selectedNodeId.value)
             class="text-gray-500 dark:text-gray-500"
           />
         </g>
-        
         <path
           v-if="connectingFrom"
           :d="ghostLinePath"
@@ -587,7 +543,6 @@ const isColorActive = computed(() => !!selectedNodeId.value)
           stroke-linecap="round"
           class="pointer-events-none"
         />
-
         <g
           v-for="node in tree.nodes"
           :key="node.id"
@@ -625,7 +580,8 @@ const isColorActive = computed(() => !!selectedNodeId.value)
         </g>
       </svg>
 
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex gap-2 border border-gray-300 dark:border-gray-700 z-20 flex-wrap justify-center max-w-[calc(100vw-2rem)]">
+      <!-- Desktop Toolbar -->
+      <div class="hidden sm:flex absolute top-4 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 gap-2 border border-gray-300 dark:border-gray-700 z-20">
         <button @click="undo" :disabled="history.length === 0" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorUndo') }}
         </button>
@@ -641,7 +597,6 @@ const isColorActive = computed(() => !!selectedNodeId.value)
         <button @click="openDescModal" :disabled="!isDescActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorDescription') }}
         </button>
-        
         <div class="relative">
           <button @click="showColorPicker = !showColorPicker" :disabled="!isColorActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed">
             {{ t('nodeColor') }}
@@ -658,12 +613,79 @@ const isColorActive = computed(() => !!selectedNodeId.value)
             <button @click="setNodeColor('')" class="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 transition-transform hover:scale-110 flex items-center justify-center text-xs text-gray-500" title="Сбросить цвет">✕</button>
           </div>
         </div>
-
         <button @click="deleteSelected" :disabled="!isDeleteActive" class="px-4 py-2 rounded-lg text-sm font-medium transition bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-800 disabled:opacity-40 disabled:cursor-not-allowed">
           {{ t('editorDelete') }}
         </button>
       </div>
+
+      <!-- Mobile FAB -->
+      <button @click="showToolsSheet = true" class="absolute bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-xl flex items-center justify-center z-20 hover:bg-blue-700 transition-transform active:scale-95 border-4 border-white dark:border-gray-900 sm:hidden">
+        <svg v-if="!selectedNodeId" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        <svg v-else class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+      </button>
     </div>
+
+    <!-- Mobile Bottom Sheet -->
+    <Teleport to="body">
+      <div v-if="showToolsSheet || showColorPickerSheet" class="fixed inset-0 z-50 sm:hidden flex items-end justify-center">
+        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showToolsSheet = false; showColorPickerSheet = false"></div>
+        <div class="relative w-full bg-white dark:bg-gray-800 rounded-t-2xl shadow-2xl p-5 pb-8 border-t border-gray-200 dark:border-gray-700 transform transition-transform">
+          <div class="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-4"></div>
+
+          <template v-if="showColorPickerSheet">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 text-center">{{ t('colorBtn') }}</h3>
+            <div class="flex flex-wrap justify-center gap-3 mb-2">
+              <button v-for="color in NODE_COLORS" :key="color" @click="setNodeColor(color); showColorPickerSheet = false" class="w-10 h-10 rounded-full border-2 transition-transform hover:scale-110" :class="selectedNode?.color === color ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'" :style="{ backgroundColor: color }" />
+              <button @click="setNodeColor(''); showColorPickerSheet = false" class="w-10 h-10 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 transition-transform hover:scale-110 flex items-center justify-center text-sm text-gray-500">✕</button>
+            </div>
+          </template>
+
+          <template v-else>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 text-center">
+              {{ selectedNodeId ? t('nodeActions') : t('editorTools') }}
+            </h3>
+            <div class="grid grid-cols-2 gap-3">
+              <template v-if="!selectedNodeId">
+                <button @click="isCreating = !isCreating; showToolsSheet = false" class="flex flex-col items-center justify-center p-4 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                  <span class="text-sm font-medium">{{ t('createNode') }}</span>
+                </button>
+                <button @click="autoLayout(); showToolsSheet = false" :disabled="tree.nodes.length === 0" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600 disabled:opacity-40">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                  <span class="text-sm font-medium">{{ t('autoLayoutBtn') }}</span>
+                </button>
+                <button @click="undo(); showToolsSheet = false" :disabled="history.length === 0" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600 disabled:opacity-40">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                  <span class="text-sm font-medium">{{ t('undoBtn') }}</span>
+                </button>
+                <button @click="showMetaModal = true; showToolsSheet = false" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  <span class="text-sm font-medium">{{ t('settingsBtn') }}</span>
+                </button>
+              </template>
+              <template v-else>
+                <button @click="selectedNode && renameNode(selectedNode); showToolsSheet = false" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                  <span class="text-sm font-medium">{{ t('renameBtn') }}</span>
+                </button>
+                <button @click="openDescModal(); showToolsSheet = false" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  <span class="text-sm font-medium">{{ t('descBtn') }}</span>
+                </button>
+                <button @click="showColorPickerSheet = true" class="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+                  <span class="text-sm font-medium">{{ t('colorBtn') }}</span>
+                </button>
+                <button @click="deleteSelected(); showToolsSheet = false" class="flex flex-col items-center justify-center p-4 rounded-xl bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+                  <svg class="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  <span class="text-sm font-medium">{{ t('deleteBtn') }}</span>
+                </button>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </Teleport>
 
     <div v-if="showDescModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6 border border-gray-300 dark:border-gray-700">
@@ -677,6 +699,26 @@ const isColorActive = computed(() => !!selectedNodeId.value)
         <div class="flex justify-end gap-3 mt-6">
           <button @click="showDescModal = false" class="px-4 py-2 text-gray-800 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">{{ t('cancel') }}</button>
           <button @click="saveDesc" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">{{ t('save') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showMetaModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6 border border-gray-300 dark:border-gray-700">
+        <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">{{ t('treeSettings') }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('editorTitlePlaceholder') }}</label>
+            <input v-model="tree.title" @input="isDirty = true" :placeholder="t('editorTitlePlaceholder')" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('editorDescPlaceholder') }}</label>
+            <textarea v-model="tree.description" @input="isDirty = true" :placeholder="t('editorDescPlaceholder')" rows="3" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+          <button @click="showMetaModal = false" class="px-4 py-2 text-gray-800 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition border border-gray-300 dark:border-gray-600">{{ t('cancel') }}</button>
+          <button @click="showMetaModal = false" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">{{ t('editorSave') }}</button>
         </div>
       </div>
     </div>
